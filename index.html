@@ -10,25 +10,28 @@
     <div class="container">
         <div id="login-screen">
             <h2>በ Supabase የሚመራ የሩጫ ፈተና 🏁</h2>
+            <p>ስምህን አስገብተህ ግባ። ውድድሩ በአድሚኑ ሲጀመር ጥያቄዎቹ በቅጽበት ይከፈታሉ!</p>
             <input type="text" id="username-input" placeholder="ስምህን አስገባ..."><br><br>
             <button onclick="joinRace()">ወደ ውድድር ግባ</button>
         </div>
 
         <div id="game-screen" class="hidden">
-            <div style="display:flex; justify-content:space-between; background:#1a202c; padding:10px;">
+            <div style="display:flex; justify-content:space-between; background:#1a202c; padding:10px; border-radius: 6px;">
                 <span id="question-number">ጥያቄ፡ 0/10</span>
                 <span id="timer" style="color:#e53e3e; font-weight:bold; font-size:20px;">10s</span>
                 <span id="live-count">በሕይወት ያሉ፡ 0</span>
             </div>
 
             <div id="question-box" style="margin-top:20px;">
-                <h3 id="question-text">ፈታኙ ውድድሩን እስኪያስጀምር በመጠባበቅ ላይ... 🟢</h3>
-                <button id="btnA" class="option-btn" onclick="submitAnswer('A')" disabled>A. <span id="optA"></span></button>
-                <button id="btnB" class="option-btn" onclick="submitAnswer('B')" disabled>B. <span id="optB"></span></button>
-                <button id="btnC" class="option-btn" onclick="submitAnswer('C')" disabled>C. <span id="optC"></span></button>
-                <button id="btnD" class="option-btn" onclick="submitAnswer('D')" disabled>D. <span id="optD"></span></button>
+                <h3 id="question-text" style="color: #ecc94b;">ፈታኙ ውድድሩን እስኪያስጀምር በመጠባበቅ ላይ... 🟢</h3>
+                <button id="btnA" class="option-btn" onclick="submitAnswer('A')" disabled>A. <span id="optA">---</span></button>
+                <button id="btnB" class="option-btn" onclick="submitAnswer('B')" disabled>B. <span id="optB">---</span></button>
+                <button id="btnC" class="option-btn" onclick="submitAnswer('C')" disabled>C. <span id="optC">---</span></button>
+                <button id="btnD" class="option-btn" onclick="submitAnswer('D')" disabled>D. <span id="optD">---</span></button>
             </div>
-            <h2 id="status-message" style="color:#e53e3e; text-align:center;"></h2>
+            <h2 id="status-message" style="color:#e53e3e; text-align:center; margin-top: 15px;"></h2>
+            
+            <h3 style="margin-top:25px; border-top:1px solid #4a5568; padding-top:15px;">የቀጥታ የሩጫ ሜዳ 🏎️💨</h3>
             <div id="race-track" class="race-track"></div>
         </div>
     </div>
@@ -37,21 +40,22 @@
         const SUPABASE_URL = "https://thyzavvcxzpystxguarp.supabase.co";
         const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoeXphdnZjeHpweXN0eGd1YXJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNTAxMTQsImV4cCI6MjA5MzcyNjExNH0.0eLX-_epguHbdcm0IX_m_xv2OSCVBUVZ0WB38u0s6ZI";
         
-        // 🛠️ የተስተካከለው መስመር (window.supabase ተጠቅሟል)
+        // የ Supabase ግንኙነት መክፈቻ
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         let myPlayerId = null;
         let currentQuestion = null;
         let isMyCarEliminated = false;
 
+        // 1. ተጫዋች በዳታቤዝ ውስጥ መመዝገብ
         async function joinRace() {
             const username = document.getElementById("username-input").value.trim();
-            if(!username) return alert("ስም አስገባ!");
+            if(!username) return alert("እባክህ መጀመሪያ ስምህን አስገባ!");
 
             const { data, error } = await supabase.from('players').insert([{ username }]).select();
             if(error) {
                 console.error(error);
-                return alert("መግባት አልተቻለም! እባክህ የ RLS ፖሊሲ መፈቀዱን አረጋግጥ።");
+                return alert("ወደ ዳታቤዝ መግባት አልተቻለም። እባክህ RLS ጠፍቶ መሆኑን አረጋግጥ!");
             }
 
             myPlayerId = data[0].id;
@@ -62,43 +66,50 @@
             listenToRaceUpdates();
         }
 
+        // 2. የ Supabase Realtime ክትትል (የአድሚኑን ትዕዛዝ በቅጽበት መቀበያ)
         function listenToRaceUpdates() {
-            // ሀ. የውድድሩን ሰዓት እና ጥያቄ መከታተል
+            // ሀ. የአድሚኑን የሰዓት እና የዙር ለውጥ መከታተል
             supabase.channel('race_state_changes')
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'race_state' }, payload => {
                     const state = payload.new;
                     document.getElementById("timer").innerText = state.time_left + "s";
                     
+                    // አድሚኑ አዲስ ዙር ሲጀምር እና ሰዓቱ 10 ሲሆን ጥያቄውን ከዳታቤዝ አውጣ
                     if (state.status === 'active' && state.time_left === 10) {
                         loadQuestion(state.current_question_index);
                     }
+                    // የ 10 ሰከንድ ቆጠራው ሲያልቅ ምርጫዎቹን መቆለፊያ
                     if (state.status === 'round_ended') {
                         disableAllButtons();
                     }
+                    // ሙሉ ውድድሩ ሲያልቅ አሸናፊዎችን ማሳያ
                     if (state.status === 'finished') {
                         checkFinalWinners();
                     }
                 }).subscribe();
 
-            // ለ. የተጫዋቾችን እንቅስቃሴ መከታተል
+            // ለ. የተጫዋቾችን የሩጫ እንቅስቃሴ በቅጽበት መከታተል
             supabase.channel('player_changes')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, async () => {
                     updateTrackAndStats();
                 }).subscribe();
         }
 
+        // 3. ጥያቄ ከዳታቤዝ አውጥቶ ለተማሪው ማሳየት
         async function loadQuestion(index) {
             const { data, error } = await supabase.from('questions').select('*').order('id', { ascending: true }).range(index, index).single();
             if(error || !data) return;
             
             currentQuestion = data;
             document.getElementById("question-number").innerText = `ጥያቄ፡ ${index + 1}/10`;
+            document.getElementById("question-text").style.color = "#fff";
             document.getElementById("question-text").innerText = data.question_text;
             document.getElementById("optA").innerText = data.option_a;
             document.getElementById("optB").innerText = data.option_b;
             document.getElementById("optC").innerText = data.option_c;
             document.getElementById("optD").innerText = data.option_d;
 
+            // ተማሪው እስካሁን ካልተቀነሰ ቁልፎቹን መክፈት
             if (!isMyCarEliminated) {
                 const buttons = document.querySelectorAll(".option-btn");
                 buttons.forEach(btn => { 
@@ -109,18 +120,21 @@
             }
         }
 
+        // 4. ተማሪው ምርጫ ሲመርጥ መልስ ማረጋገጥ
         async function submitAnswer(option) {
             disableAllButtons();
             event.target.classList.add("selected");
 
             if (option === currentQuestion.correct_answer) {
+                // በትክክል ከተመለሰ በ RPC ነጥብ ጨምር
                 await supabase.rpc('increment_score', { player_id: myPlayerId });
                 event.target.className = "option-btn correct";
             } else {
+                // ከተሳሳተ መኪናውን አቁምና ከጨዋታው አስወግድ
                 isMyCarEliminated = true;
                 await supabase.from('players').update({ is_eliminated: true, has_answered: true }).eq('id', myPlayerId);
                 event.target.className = "option-btn wrong";
-                document.getElementById("status-message").innerText = "የተሳሳተ መልስ! ከውድድሩ ተቀንሰሃል! 💥";
+                document.getElementById("status-message").innerText = "❌ የተሳሳተ መልስ! ከውድድሩ ተቀንሰሃል! 💥";
             }
         }
 
@@ -129,6 +143,7 @@
             buttons.forEach(btn => btn.disabled = true);
         }
 
+        // 5. የሩጫ ሜዳውን መኪናዎች በቅጽበት ማደስ
         async function updateTrackAndStats() {
             const { data: players, error } = await supabase.from('players').select('*').order('score', { ascending: false });
             if (error || !players) return;
@@ -136,7 +151,7 @@
             const active = players.filter(p => !p.is_eliminated).length;
             document.getElementById("live-count").innerText = `በሕይወት ያሉ፡ ${active}`;
 
-            // እኔ በታይም አውት ተቆርጬ እንደሆነ ማረጋገጫ
+            // ተማሪው በሰዓት ማለቅ ምክንያት ተቀንሶ ከሆነ ማረጋገጫ
             const me = players.find(p => p.id === myPlayerId);
             if (me && me.is_eliminated && !isMyCarEliminated) {
                 isMyCarEliminated = true;
@@ -158,14 +173,15 @@
             });
         }
 
+        // 6. የ 10ኛው ጥያቄ ማጣሪያ ሲያልቅ አሸናፊዎችን ማወቂያ
         async function checkFinalWinners() {
             const { data: players } = await supabase.from('players').select('*').eq('score', 10).eq('is_eliminated', false);
             const qBox = document.getElementById("question-box");
             if (players && players.length > 0) {
                 const names = players.map(p => p.username).join(", ");
-                qBox.innerHTML = `<h2 style='color:#38a169; text-align:center;'>🎉 ውድድሩ ተጠናቋል! 🎉</h2><h3 style='text-align:center;'>አሸናፊዎች፦ <span style='color:#ecc94b;'>${names}</span> 🏆</h3>`;
+                qBox.innerHTML = `<h2 style='color:#38a169; text-align:center;'>🎉 ውድድሩ ተጠናቋል! 🎉</h2><h3 style='text-align:center;'>የውድድሩ አሸናፊዎች፦ <span style='color:#ecc94b;'>${names}</span> 🏆</h3>`;
             } else {
-                qBox.innerHTML = `<h2 style='color:#e53e3e; text-align:center;'>🏁 ውድድሩ ተጠናቋል! 🏁</h2><h3 style='text-align:center; color:#aaa;'>ማንም አላሸነፈም።</h3>`;
+                qBox.innerHTML = `<h2 style='color:#e53e3e; text-align:center;'>🏁 ውድድሩ ተጠናቋል! 🏁</h2><h3 style='text-align:center; color:#aaa;'>ማንም ሁሉንም 10 ጥያቄዎች መመለስ አልቻለም።</h3>`;
             }
         }
     </script>
