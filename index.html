@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <title>Supabase የሩጫ ፈተና 🏎️</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container">
+        <div id="login-screen">
+            <h2>በ Supabase የሚመራ የሩጫ ፈተና 🏁</h2>
+            <input type="text" id="username-input" placeholder="ስምህን አስገባ..."><br><br>
+            <button onclick="joinRace()">ወደ ውድድር ግባ</button>
+        </div>
+
+        <div id="game-screen" class="hidden">
+            <div style="display:flex; justify-content:space-between; background:#1a202c; padding:10px;">
+                <span id="question-number">ጥያቄ፡ 0/10</span>
+                <span id="timer" style="color:#e53e3e; font-weight:bold; font-size:20px;">10s</span>
+                <span id="live-count">በሕይወት ያሉ፡ 0</span>
+            </div>
+
+            <div id="question-box" style="margin-top:20px;">
+                <h3 id="question-text">ጥያቄው እዚህ ጋር ይወጣል...</h3>
+                <button class="option-btn" onclick="submitAnswer('A')">A. <span id="optA"></span></button>
+                <button class="option-btn" onclick="submitAnswer('B')">B. <span id="optB"></span></button>
+                <button class="option-btn" onclick="submitAnswer('C')">C. <span id="optC"></span></button>
+                <button class="option-btn" onclick="submitAnswer('D')">D. <span id="optD"></span></button>
+            </div>
+            <h2 id="status-message" style="color:#e53e3e; text-align:center;"></h2>
+            <div id="race-track" class="race-track"></div>
+        </div>
+    </div>
+
+    <script>
+        // የራስህን Supabase መረጃ እዚህ ተካ
+        const SUPABASE_URL = "https://thyzavvcxzpystxguarp.supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoeXphdnZjeHpweXN0eGd1YXJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNTAxMTQsImV4cCI6MjA5MzcyNjExNH0.0eLX-_epguHbdcm0IX_m_xv2OSCVBUVZ0WB38u0s6ZI";
+        const supabase = @supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let myPlayerId = null;
+        let currentQuestion = null;
+
+        // 1. ተጫዋች መመዝገብ
+        async function joinRace() {
+            const username = document.getElementById("username-input").value;
+            if(!username) return alert("ስም አስገባ!");
+
+            const { data, error } = await supabase.from('players').insert([{ username }]).select();
+            if(error) return alert("መግባት አልተቻለም");
+
+            myPlayerId = data[0].id;
+            document.getElementById("login-screen").classList.add("hidden");
+            document.getElementById("game-screen").classList.remove("hidden");
+
+            listenToRaceUpdates();
+        }
+
+        // 2. የ Supabase Realtime ክትትል (የ Socket.io ምትክ)
+        function listenToRaceUpdates() {
+            // ሀ. የውድድሩን ሰዓት እና ጥያቄ መከታተል
+            supabase.channel('race_state_changes')
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'race_state' }, payload => {
+                    const state = payload.new;
+                    document.getElementById("timer").innerText = state.time_left + "s";
+                    
+                    if (state.status === 'active' && state.time_left === 10) {
+                        loadQuestion(state.current_question_index);
+                    }
+                }).subscribe();
+
+            // ለ. የተጫዋቾችን እንቅስቃሴ (የሩጫ ሜዳውን) መከታተል
+            supabase.channel('player_changes')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, async () => {
+                    updateTrackAndStats();
+                }).subscribe();
+        }
+
+        // 3. ጥያቄ ከዳታቤዝ አውጥቶ ማሳየት
+        async function loadQuestion(index) {
+            const { data } = await supabase.from('questions').select('*').range(index, index).single();
+            if(!data) return;
+            
+            currentQuestion = data;
+            document.getElementById("question-number").innerText = `ጥያቄ፡ ${index + 1}/10`;
+            document.getElementById("question-text").innerText = data.question_text;
+            document.getElementById("optA").innerText = data.option_a;
+            document.getElementById("optB").innerText = data.option_b;
+            document.getElementById("optC").innerText = data.option_c;
+            document.getElementById("optD").innerText = data.option_d;
+
+            const buttons = document.querySelectorAll(".option-btn");
+            buttons.forEach(btn => { btn.disabled = false; btn.className = "option-btn"; });
+            document.getElementById("status-message").innerText = "";
+        }
+
+        // 4. መልስ መላክ እና ማረጋገጥ
+        async function submitAnswer(option) {
+            const buttons = document.querySelectorAll(".option-btn");
+            buttons.forEach(btn => btn.disabled = true);
+            event.target.classList.add("selected");
+
+            if (option === currentQuestion.correct_answer) {
+                // በትክክል የመለሰ ከሆነ ነጥብ ጨምር
+                await supabase.rpc('increment_score', { player_id: myPlayerId });
+                event.target.className = "option-btn correct";
+            } else {
+                // ከተሳሳተ ከውድድር አስወግድ
+                await supabase.from('players').update({ is_eliminated: true, has_answered: true }).eq('id', myPlayerId);
+                event.target.className = "option-btn wrong";
+                document.getElementById("status-message").innerText = "የተሳሳተ መልስ! ከውድድሩ ተቀንሰሃል! 💥";
+            }
+        }
+
+        // 5. የሩጫ ሜዳውን ማደስ
+        async function updateTrackAndStats() {
+            const { data: players } = await supabase.from('players').select('*');
+            const active = players.filter(p => !p.is_eliminated).length;
+            document.getElementById("live-count").innerText = `በሕይወት ያሉ፡ ${active}`;
+
+            const track = document.getElementById("race-track");
+            track.innerHTML = "";
+            players.forEach(p => {
+                const progress = (p.score / 10) * 100;
+                const lane = document.createElement("div");
+                lane.className = "lane";
+                lane.innerHTML = `<div class="car ${p.isEliminated ? 'eliminated-car' : ''}" style="left: ${progress * 0.85}%;">🏎️ <span>${p.username}</span></div>`;
+                track.appendChild(lane);
+            });
+        }
+    </script>
+</body>
+</html>
