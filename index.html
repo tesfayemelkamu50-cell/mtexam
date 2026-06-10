@@ -1,8 +1,3 @@
-የሰጠኸኝ የ `index.html` ኮድ ጥቂት ማስተካከያዎች ያስፈልጉታል። በኮዱ ውስጥ የነበረው `@supabase.createClient` ስህተት የነበረ ሲሆን (ከ @ ምልክት ውጪ `supabase.createClient` መሆን አለበት) እንዲሁም በዳታቤዝህ ውስጥ ያሉ የባህሪ ስሞች (Field names) ከጃቫስክሪፕት ኮድህ ጋር ሙሉ በሙሉ መጣጣም አለባቸው (ለምሳሌ፦ `p.isEliminated` የነበረው `p.is_eliminated` መሆን አለበት)።
-
-የ Supabase URL እና ANON KEY መረጃዎችህን ጠብቆ ሙሉ በሙሉ የተስተካከለው እና ዝግጁ የሆነው የ **`index.html`** ኮድ ይኸውልህ፦
-
-```html
 <!DOCTYPE html>
 <html lang="am">
 <head>
@@ -27,11 +22,11 @@
             </div>
 
             <div id="question-box" style="margin-top:20px;">
-                <h3 id="question-text">ጥያቄው እዚህ ጋር ይወጣል...</h3>
-                <button id="btnA" class="option-btn" onclick="submitAnswer('A')">A. <span id="optA"></span></button>
-                <button id="btnB" class="option-btn" onclick="submitAnswer('B')">B. <span id="optB"></span></button>
-                <button id="btnC" class="option-btn" onclick="submitAnswer('C')">C. <span id="optC"></span></button>
-                <button id="btnD" class="option-btn" onclick="submitAnswer('D')">D. <span id="optD"></span></button>
+                <h3 id="question-text">ፈታኙ ውድድሩን እስኪያስጀምር በመጠባበቅ ላይ... 🟢</h3>
+                <button id="btnA" class="option-btn" onclick="submitAnswer('A')" disabled>A. <span id="optA"></span></button>
+                <button id="btnB" class="option-btn" onclick="submitAnswer('B')" disabled>B. <span id="optB"></span></button>
+                <button id="btnC" class="option-btn" onclick="submitAnswer('C')" disabled>C. <span id="optC"></span></button>
+                <button id="btnD" class="option-btn" onclick="submitAnswer('D')" disabled>D. <span id="optD"></span></button>
             </div>
             <h2 id="status-message" style="color:#e53e3e; text-align:center;"></h2>
             <div id="race-track" class="race-track"></div>
@@ -42,19 +37,22 @@
         const SUPABASE_URL = "https://thyzavvcxzpystxguarp.supabase.co";
         const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoeXphdnZjeHpweXN0eGd1YXJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNTAxMTQsImV4cCI6MjA5MzcyNjExNH0.0eLX-_epguHbdcm0IX_m_xv2OSCVBUVZ0WB38u0s6ZI";
         
-        // የ @ ምልክት ተወግዶ የተስተካከለ
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        // 🛠️ የተስተካከለው መስመር (window.supabase ተጠቅሟል)
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         let myPlayerId = null;
         let currentQuestion = null;
+        let isMyCarEliminated = false;
 
-        // 1. ተጫዋች መመዝገብ
         async function joinRace() {
             const username = document.getElementById("username-input").value.trim();
             if(!username) return alert("ስም አስገባ!");
 
             const { data, error } = await supabase.from('players').insert([{ username }]).select();
-            if(error) return alert("መግባት አልተቻለም");
+            if(error) {
+                console.error(error);
+                return alert("መግባት አልተቻለም! እባክህ የ RLS ፖሊሲ መፈቀዱን አረጋግጥ።");
+            }
 
             myPlayerId = data[0].id;
             document.getElementById("login-screen").classList.add("hidden");
@@ -64,7 +62,6 @@
             listenToRaceUpdates();
         }
 
-        // 2. የ Supabase Realtime ክትትል
         function listenToRaceUpdates() {
             // ሀ. የውድድሩን ሰዓት እና ጥያቄ መከታተል
             supabase.channel('race_state_changes')
@@ -78,6 +75,9 @@
                     if (state.status === 'round_ended') {
                         disableAllButtons();
                     }
+                    if (state.status === 'finished') {
+                        checkFinalWinners();
+                    }
                 }).subscribe();
 
             // ለ. የተጫዋቾችን እንቅስቃሴ መከታተል
@@ -87,7 +87,6 @@
                 }).subscribe();
         }
 
-        // 3. ጥያቄ ከዳታቤዝ አውጥቶ ማሳየት
         async function loadQuestion(index) {
             const { data, error } = await supabase.from('questions').select('*').order('id', { ascending: true }).range(index, index).single();
             if(error || !data) return;
@@ -100,25 +99,25 @@
             document.getElementById("optC").innerText = data.option_c;
             document.getElementById("optD").innerText = data.option_d;
 
-            const buttons = document.querySelectorAll(".option-btn");
-            buttons.forEach(btn => { 
-                btn.disabled = false; 
-                btn.className = "option-btn"; 
-            });
-            document.getElementById("status-message").innerText = "";
+            if (!isMyCarEliminated) {
+                const buttons = document.querySelectorAll(".option-btn");
+                buttons.forEach(btn => { 
+                    btn.disabled = false; 
+                    btn.className = "option-btn"; 
+                });
+                document.getElementById("status-message").innerText = "";
+            }
         }
 
-        // 4. መልስ መላክ እና ማረጋገጥ
         async function submitAnswer(option) {
             disableAllButtons();
             event.target.classList.add("selected");
 
             if (option === currentQuestion.correct_answer) {
-                // በትክክል የመለሰ ከሆነ ነጥብ ጨምር
                 await supabase.rpc('increment_score', { player_id: myPlayerId });
                 event.target.className = "option-btn correct";
             } else {
-                // ከተሳሳተ ከውድድር አስወግድ
+                isMyCarEliminated = true;
                 await supabase.from('players').update({ is_eliminated: true, has_answered: true }).eq('id', myPlayerId);
                 event.target.className = "option-btn wrong";
                 document.getElementById("status-message").innerText = "የተሳሳተ መልስ! ከውድድሩ ተቀንሰሃል! 💥";
@@ -130,13 +129,20 @@
             buttons.forEach(btn => btn.disabled = true);
         }
 
-        // 5. የሩጫ ሜዳውን ማደስ
         async function updateTrackAndStats() {
             const { data: players, error } = await supabase.from('players').select('*').order('score', { ascending: false });
             if (error || !players) return;
 
             const active = players.filter(p => !p.is_eliminated).length;
             document.getElementById("live-count").innerText = `በሕይወት ያሉ፡ ${active}`;
+
+            // እኔ በታይም አውት ተቆርጬ እንደሆነ ማረጋገጫ
+            const me = players.find(p => p.id === myPlayerId);
+            if (me && me.is_eliminated && !isMyCarEliminated) {
+                isMyCarEliminated = true;
+                disableAllButtons();
+                document.getElementById("status-message").innerText = "⏱️ ጊዜ አብቅቶብሃል! ከውድድሩ ተቀንሰሃል! 🛑";
+            }
 
             const track = document.getElementById("race-track");
             track.innerHTML = "";
@@ -145,15 +151,23 @@
                 const progress = (p.score / 10) * 100;
                 const lane = document.createElement("div");
                 lane.className = "lane";
-                // p.isEliminated ወደ p.is_eliminated ተቀይሯል
-                lane.innerHTML = `<div class="car ${p.is_eliminated ? 'eliminated-car' : ''}" style="left: ${progress * 0.85}%;">
+                lane.innerHTML = `<div class="car ${p.is_eliminated ? 'eliminated-car' : ''}" style="left: ${progress * 0.82}%;">
                                     🏎️ <span>${p.username} (${progress}%) ${p.is_eliminated ? '💥' : ''}</span>
                                   </div>`;
                 track.appendChild(lane);
             });
         }
+
+        async function checkFinalWinners() {
+            const { data: players } = await supabase.from('players').select('*').eq('score', 10).eq('is_eliminated', false);
+            const qBox = document.getElementById("question-box");
+            if (players && players.length > 0) {
+                const names = players.map(p => p.username).join(", ");
+                qBox.innerHTML = `<h2 style='color:#38a169; text-align:center;'>🎉 ውድድሩ ተጠናቋል! 🎉</h2><h3 style='text-align:center;'>አሸናፊዎች፦ <span style='color:#ecc94b;'>${names}</span> 🏆</h3>`;
+            } else {
+                qBox.innerHTML = `<h2 style='color:#e53e3e; text-align:center;'>🏁 ውድድሩ ተጠናቋል! 🏁</h2><h3 style='text-align:center; color:#aaa;'>ማንም አላሸነፈም።</h3>`;
+            }
+        }
     </script>
 </body>
 </html>
-
-```
