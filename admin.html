@@ -1,12 +1,3 @@
-ልክ እንደ ተማሪው ገጽ ሁሉ፣ በዚህ የአድሚን ገጽ ኮድ ላይም ጥቂት ማስተካከያዎች ያስፈልጋሉ። ዋናዎቹ የተስተካከሉ ስህተቶች፡
-
-1. **`@supabase` ስህተት፡** ከ `@` ምልክት ውጪ `supabase.createClient` መሆን አለበት።
-2. **የዳታቤዝ ፊልድ ስሞች፡** በጃቫስክሪፕት ውስጥ `p.is_eliminated` መሆን ሲገባው `is_eliminated: false` የሚለው ማጣሪያ በ `.match()` ውስጥ አልተካተተም ነበር።
-3. **የቀጥታ ስታቲስቲክስ (Live Stats)፡** አድሚኑ በሕይወት ያሉትን እና የተቀነሱትን ሰዎች ብዛት እንዲያይ የሚያስችሉ ተጨማሪ የኤችቲኤምኤል (HTML) ክፍሎች እና የሪልታይም (Realtime) ክትትል ተጨምሮበታል።
-
-የቀረቡትን የ Supabase መረጃዎች (URL እና ANON KEY) ጠብቆ ሙሉ በሙሉ የተስተካከለው እና ዝግጁ የሆነው የ **`admin.html`** ኮድ ይኸውልህ፦
-
-```html
 <!DOCTYPE html>
 <html lang="am">
 <head>
@@ -41,16 +32,14 @@
         const SUPABASE_URL = "https://thyzavvcxzpystxguarp.supabase.co";
         const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoeXphdnZjeHpweXN0eGd1YXJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNTAxMTQsImV4cCI6MjA5MzcyNjExNH0.0eLX-_epguHbdcm0IX_m_xv2OSCVBUVZ0WB38u0s6ZI";
         
-        // የ @ ምልክት ተወግዶ የተስተካከለ
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        // 🛠️ የተስተካከለው መስመር (window.supabase ተጠቅሟል)
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         let currentQ = -1;
         let timerInterval = null;
 
-        // መጀመሪያ ገጹ ሲከፈት ያለውን የተጫዋቾች ቁጥር ማሳየት
         updateAdminStats();
 
-        // አዳዲስ ሰዎች ሲገቡ ወይም ሲቀነሱ ቁጥሩን በሪልታይም ማደስ
         supabase.channel('admin_player_changes')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => {
                 updateAdminStats();
@@ -72,15 +61,12 @@
             document.getElementById("timer-display").innerText = timeLeft;
             document.getElementById("current-q-view").innerText = `አሁን ያለ የተለቀቀው፡ ጥያቄ ${currentQ + 1}/10`;
 
-            // በ Supabase ላይ አዲሱን ጥያቄ ማብሰር (ይህ ተማሪዎች ጋር ጥያቄውን ይከፍታል)
             await supabase.from('race_state').update({ current_question_index: currentQ, time_left: timeLeft, status: 'active' }).eq('id', 1);
 
-            // በየሰከንዱ የሚቆጥረው የሰዓት ሞተር
             timerInterval = setInterval(async () => {
                 timeLeft--;
                 document.getElementById("timer-display").innerText = timeLeft;
                 
-                // በየሰከንዱ በ Supabase ላይ ሰዓቱን ማደስ (ለተማሪዎቹ Realtime ይደርሳቸዋል)
                 await supabase.from('race_state').update({ time_left: timeLeft }).eq('id', 1);
 
                 if(timeLeft <= 0) {
@@ -91,10 +77,10 @@
         }
 
         async function endRound() {
-            document.getElementById("current-q-view").innerText = "ዙሩ አልቋል! መልስ ያልሰጡ ሰዎችን የማቀናስ ሂደት ላይ ነው...";
+            document.getElementById("current-q-view").innerText = "ዙሩ አልቋል! ሰዎችን የማጣራት ሂደት ላይ ነው...";
 
-            // 1. ጊዜ ያለቀባቸውንና እስካሁን መልስ ያልሰጡትን መቅጣት (Eliminate ማድረግ)
-            const { data: players, error } = await supabase.from('players').select('id').eq('has_answered', false).eq('is_eliminated', false);
+            // 1. ሰዓት ያለቀባቸውን መቅጣት
+            const { data: players } = await supabase.from('players').select('id').eq('has_answered', false).eq('is_eliminated', false);
             
             if (players && players.length > 0) {
                 for(let p of players) {
@@ -102,15 +88,12 @@
                 }
             }
 
-            // 2. በሕይወት የተረፉት ሰዎች ለቀጣዩ ጥያቄ እንዲዘጋጁ የሰዎችን 'has_answered' ሁኔታ ማስተካከል
+            // 2. የተረፉትን ማዘጋጀት
             await supabase.from('players').update({ has_answered: false }).eq('is_eliminated', false);
-            
-            // 3. የውድድሩን ሁኔታ ወደ 'round_ended' መቀየር (አድሚኑ Next እስኪል ጨዋታው ይቆማል)
             await supabase.from('race_state').update({ status: 'round_ended' }).eq('id', 1);
             
             document.getElementById("next-btn").disabled = false;
             document.getElementById("current-q-view").innerText = "ማጣራቱ አልቋል። ቀጣዩን ጥያቄ ለመልቀቅ 'Next' ይጫኑ።";
-            alert("ዙሩ አልቋል! አድሚን ቀጣዩን ጥያቄ መልቀቅ ትችላለህ።");
         }
 
         async function updateAdminStats() {
@@ -126,5 +109,3 @@
     </script>
 </body>
 </html>
-
-```
